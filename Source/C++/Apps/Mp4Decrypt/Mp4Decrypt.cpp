@@ -31,13 +31,16 @@
 +---------------------------------------------------------------------*/
 #include <stdio.h>
 #include <stdlib.h>
+#include <iostream>
+#include <iomanip>
+#include <chrono>
 
 #include "Ap4.h"
 
 /*----------------------------------------------------------------------
 |   constants
 +---------------------------------------------------------------------*/
-#define BANNER "MP4 Decrypter - Version 1.4\n"\
+#define BANNER "MP4 Decrypter - Version 1.4 \n"\
                "(Bento4 Version " AP4_VERSION_STRING ")\n"\
                "(c) 2002-2015 Axiomatic Systems, LLC"
  
@@ -79,10 +82,41 @@ public:
 AP4_Result
 ProgressListener::OnProgress(unsigned int step, unsigned int total)
 {
-    fprintf(stdout, "\r%d/%d", step, total);
-    fflush(stdout);
+	int barWidth = 70;
+	fprintf(stdout, "[");
+	float progress = (float)step / (float)total;
+	int pos = barWidth * progress;
+	for (int i = 0; i < barWidth; ++i) {
+		if (i < pos) fprintf(stdout, "=");
+		else if (i == pos) fprintf(stdout, ">");
+		else fprintf(stdout, " ");
+    }
+	fprintf(stdout, "] %d %\r", int(progress * 100.0));
+	fflush(stdout);
     return AP4_SUCCESS;
 }
+
+std::ostream&
+display(std::ostream& os, std::chrono::nanoseconds ns)
+{
+    using namespace std;
+    using namespace std::chrono;
+    typedef duration<int, ratio<86400>> days;
+    char fill = os.fill();
+    os.fill('0');
+    auto d = duration_cast<days>(ns);
+    ns -= d;
+    auto h = duration_cast<hours>(ns);
+    ns -= h;
+    auto m = duration_cast<minutes>(ns);
+    ns -= m;
+    auto s = duration_cast<seconds>(ns);
+    os << setw(2) << h.count() << "h:"
+       << setw(2) << m.count() << "m:"
+       << setw(2) << s.count() << 's';
+    os.fill(fill);
+    return os;
+};
 
 /*----------------------------------------------------------------------
 |   main
@@ -197,6 +231,12 @@ main(int argc, char** argv)
             return 1;
         }
     }
+	
+	fflush(stdout);
+	fprintf(stdout, "Starting Decryption\n");
+	fflush(stdout);
+	
+	auto start = std::chrono::steady_clock::now();
 
     // create the decrypting processor
     AP4_Processor* processor = NULL;
@@ -251,6 +291,7 @@ main(int argc, char** argv)
         input->Seek(0);
     }
     
+	bool errors = true;
     // process/decrypt the file
     ProgressListener listener;
     if (fragments_info) {
@@ -260,12 +301,25 @@ main(int argc, char** argv)
     }
     if (AP4_FAILED(result)) {
         fprintf(stderr, "ERROR: failed to process the file (%d)\n", result);
-    }
+    } else {
+		errors = false;
+	}
 
     // cleanup
     delete processor;
     input->Release();
     output->Release();
+	
+	auto end = std::chrono::steady_clock::now();
+	
+	if(errors == false) {
+		fprintf(stdout, "\nDecryption took: ");
+		display(std::cout, std::chrono::microseconds(std::chrono::duration_cast<std::chrono::microseconds>(end - start).count()));
+		fprintf(stdout, "\n");
+		fflush(stdout);
+		fprintf(stdout, "Decrypted successfully\n\n");
+		fflush(stdout);
+	}
 
     return 0;
 }
